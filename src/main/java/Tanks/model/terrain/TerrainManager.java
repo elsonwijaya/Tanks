@@ -42,7 +42,7 @@ public class TerrainManager {
         }
         height = layout.length;
 
-        // Initialize and store original layout first
+        // Store original layout
         originalLayout = new char[height][width];
         for (int y = 0; y < height; y++) {
             Arrays.fill(originalLayout[y], ' ');
@@ -64,13 +64,16 @@ public class TerrainManager {
             Arrays.fill(row, ' ');
         }
 
-        // Initial terrain placement
-        for (int y = 0; y < layout.length; y++) {
-            for (int x = 0; x < layout[y].length(); x++) {
-                char ch = layout[y].charAt(x);
-                if (ch == 'X') {
-                    for (int i = y * CELLSIZE; i < scaledHeight; i++) {
-                        layoutScaled[i][x * CELLSIZE] = 'X';
+        // Initial terrain placement - matched with your original logic
+        for (int x = 0; x < layout.length; x++) {
+            for (int y = 0; y < layout[x].length(); y++) {
+                if (layout[x].charAt(y) == 'X') {
+                    for (int i = x * CELLSIZE; i < layoutScaled.length; i++) {
+                        for (int j = y * CELLHEIGHT; j < y * CELLHEIGHT + CELLHEIGHT; j++) {
+                            if (j < scaledWidth) {  // Add boundary check
+                                layoutScaled[i][j] = 'X';
+                            }
+                        }
                     }
                 }
             }
@@ -78,42 +81,35 @@ public class TerrainManager {
     }
 
     public void smoothTerrain() {
-        // First pass
         smoothingPass();
-        // Second pass
         smoothingPass();
     }
 
     private void smoothingPass() {
-        char[][] smooth = new char[scaledHeight][scaledWidth];
+        char[][] smoothed = new char[scaledHeight][scaledWidth];
 
-        // For each column
-        for (int x = 0; x < scaledWidth; x++) {
-            // Calculate average height from surrounding points
-            int startX = Math.max(0, x - 16);
-            int endX = Math.min(scaledWidth - 1, x + 16);
+        for (int y = 0; y + 31 < layoutScaled[0].length; y++) { // Moving average
             int sum = 0;
-            int count = 0;
-
-            for (int wx = startX; wx <= endX; wx++) {
-                int height = findGroundLevel(wx);
-                if (height < scaledHeight) {
-                    sum += height;
-                    count++;
+            for (int count = 0; count < 32; count++) {
+                int x = 0;
+                while (x < layoutScaled.length && layoutScaled[x][y + count] != 'X') {
+                    x++;
                 }
+                sum += x;
             }
-
-            // Calculate average and fill column
-            if (count > 0) {
-                int avgHeight = sum / count;
-                for (int y = avgHeight; y < scaledHeight; y++) {
-                    smooth[y][x] = 'X';
-                }
+            int average = sum / 32;
+            smoothed[average][y] = 'X';
+            for (int a = average; a < smoothed.length; a++) { // Fills bottom of X
+                smoothed[a][y] = 'X';
             }
         }
 
-        // Copy back
-        layoutScaled = smooth;
+        // Copy exactly as in your original code
+        for (int i = 0; i < smoothed.length; i++) {
+            for (int j = 0; j + 31 < smoothed[i].length; j++) {
+                layoutScaled[i][j] = smoothed[i][j];
+            }
+        }
     }
 
     private int findGroundLevel(int x) {

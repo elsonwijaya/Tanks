@@ -37,45 +37,45 @@ public class EntityManager {
         currentTurnIndex = 0;
 
         System.out.println("Initializing tanks...");
+        char[][] scaledLayout = terrainManager.getLayoutScaled();
 
-        if (layout == null) {
-            System.err.println("Error: Layout is null");
-            return;
-        }
+        // Find ground level for each tank
+        for (int x = 0; x < scaledLayout.length; x++) {
+            for (int y = 0; y < scaledLayout[0].length; y++) {
+                char ch = scaledLayout[x][y];
+                if (ch != ' ' && ch >= 'A' && ch <= 'Z' && ch != 'X' && playerColors.containsKey(ch)) {
+                    System.out.println("Found tank " + ch + " at position (" + y + "," + x + ")");
 
-        // Create tanks based on layout
-        for (int y = 0; y < layout.length; y++) {
-            for (int x = 0; x < layout[y].length; x++) {
-                char ch = layout[y][x];
-                if (playerColors.containsKey(ch)) {
-                    System.out.println("Found tank " + ch + " at position " + x + "," + y);
-                    // Calculate scaled positions and ground level
-                    float scaledX = x * CELLSIZE;
-                    float groundLevel = terrainManager.getGroundLevelAt(x * CELLSIZE);
-                    float scaledY = groundLevel - CELLSIZE;
+                    // Find actual ground level for this tank's x position
+                    float groundLevel = terrainManager.getGroundLevelAt(y);  // Use x=y for ground level check
+                    if (groundLevel >= terrainManager.getScaledHeight()) {
+                        System.out.println("Warning: No ground found for tank " + ch);
+                        continue;  // Skip this tank if no ground found
+                    }
 
-                    System.out.println("Creating tank at scaled position " + scaledX + "," + scaledY);
-
+                    int[] currentColor = playerColors.get(ch);
                     Tank tank = new Tank(
-                            scaledX,
-                            scaledY,
-                            playerColors.get(ch),
+                            y,              // x coordinate
+                            groundLevel,    // y coordinate - use actual ground level
+                            currentColor,
                             ch,
                             terrainManager
                     );
+
                     tanks.add(tank);
                     tanksCopy.add(tank);
+                    System.out.println("Created tank " + ch + " at (" + y + "," + groundLevel + ")");
                 }
             }
         }
 
         System.out.println("Created " + tanks.size() + " tanks");
 
-        Collections.sort(tanks, Comparator.comparing(Tank::getName));
-        Collections.sort(tanksCopy, Comparator.comparing(Tank::getName));
-
         if (!tanks.isEmpty()) {
+            Collections.sort(tanks, Comparator.comparing(Tank::getName));
+            Collections.sort(tanksCopy, Comparator.comparing(Tank::getName));
             currentTank = tanks.get(0);
+            System.out.println("Set current tank to: " + currentTank.getName());
         }
     }
 

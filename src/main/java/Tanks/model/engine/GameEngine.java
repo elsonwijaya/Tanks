@@ -57,12 +57,16 @@ public class GameEngine {
         terrainManager.placeTrees();
 
         System.out.println("Initializing entities...");
+        // Use scaled layout, not original layout
         entityManager.initializeTanks(
-                terrainManager.getOriginalLayout(),
+                terrainManager.getLayoutScaled(),
                 levelManager.getPlayerColors()
         );
 
         entityManager.resetTankStats();
+
+        // Set initial turn time
+        turnStartTime = System.currentTimeMillis();
         windEngine.generateNewWindForNextTurn();
 
         System.out.println("Level loading complete");

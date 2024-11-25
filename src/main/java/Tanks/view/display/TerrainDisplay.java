@@ -7,6 +7,9 @@ import processing.core.PGraphics;
 import processing.core.PImage;
 
 public class TerrainDisplay extends BaseDisplay {
+    private static final int CELLSIZE = 32;
+    private static final int CELLHEIGHT = 32;
+
     private TerrainManager terrainManager;
     private Level currentLevel;
     private PImage tree1;
@@ -30,7 +33,7 @@ public class TerrainDisplay extends BaseDisplay {
         if (currentLevel == null) return;
 
         terrainBuffer.beginDraw();
-        terrainBuffer.clear(); // Clear the buffer
+        terrainBuffer.clear();
 
         // Draw terrain to buffer
         char[][] layout = terrainManager.getLayoutScaled();
@@ -42,7 +45,7 @@ public class TerrainDisplay extends BaseDisplay {
         terrainBuffer.fill(r, g, b);
         terrainBuffer.noStroke();
 
-        // Draw terrain
+        // Draw terrain first
         for (int y = 0; y < layout.length; y++) {
             for (int x = 0; x < layout[y].length; x++) {
                 if (layout[y][x] == 'X') {
@@ -51,14 +54,26 @@ public class TerrainDisplay extends BaseDisplay {
             }
         }
 
-        // Draw trees
+        // Draw trees after terrain
         for (int y = 0; y < layout.length; y++) {
             for (int x = 0; x < layout[y].length; x++) {
                 if (layout[y][x] == 'T') {
                     PImage treeImage = currentLevel.getTreeFile() != null &&
                             currentLevel.getTreeFile().equals("tree1.png") ? tree1 : tree2;
                     if (treeImage != null) {
-                        terrainBuffer.image(treeImage, x - 16, y - 32, 32, 32);
+                        // Adjust tree position relative to ground
+                        int groundY = y;
+                        // Find ground level at this x position if needed
+                        while (groundY < layout.length && layout[groundY][x] != 'X') {
+                            groundY++;
+                        }
+                        // Draw tree at correct position
+                        terrainBuffer.image(treeImage,
+                                x - CELLSIZE/2,  // Center tree horizontally
+                                groundY - CELLHEIGHT,  // Place on ground
+                                CELLSIZE,
+                                CELLHEIGHT
+                        );
                     }
                 }
             }

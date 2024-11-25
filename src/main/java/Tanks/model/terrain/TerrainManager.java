@@ -3,7 +3,10 @@ package Tanks.model.terrain;
 import Tanks.view.display.TerrainDisplay;
 import processing.core.PApplet;
 import java.util.Arrays;
+import java.util.Map;
+import java.util.Objects;
 import java.util.Random;
+import java.util.HashMap;
 
 public class TerrainManager {
     private static final int CELLSIZE = 32;
@@ -36,20 +39,20 @@ public class TerrainManager {
         this.rawLayout = layout;
 
         // Calculate dimensions
-        width = 0;
+        height = 0;
         for (String line : layout) {
-            width = Math.max(width, line.length());
+            height = Math.max(height, line.length());
         }
-        height = layout.length;
+        width = layout.length;
 
         // Store original layout
-        originalLayout = new char[height][width];
-        for (int y = 0; y < height; y++) {
-            Arrays.fill(originalLayout[y], ' ');
-            if (y < layout.length) {
-                String line = layout[y];
-                for (int x = 0; x < line.length(); x++) {
-                    originalLayout[y][x] = line.charAt(x);
+        originalLayout = new char[width][height];
+        for (int x = 0; x < width; x++) {
+            Arrays.fill(originalLayout[x], ' ');
+            if (x < layout.length) {
+                String line = layout[x];
+                for (int y = 0; y < line.length(); y++) {
+                    originalLayout[x][y] = line.charAt(y);
                 }
             }
         }
@@ -57,23 +60,48 @@ public class TerrainManager {
         // Calculate scaled dimensions
         scaledWidth = width * CELLSIZE;
         scaledHeight = height * CELLHEIGHT;
+        System.out.println("Scaled dimensions will be: " + scaledWidth + "x" + scaledHeight);
 
         // Initialize scaled layout
-        layoutScaled = new char[scaledHeight][scaledWidth];
+        layoutScaled = new char[scaledWidth][scaledHeight];
         for (char[] row : layoutScaled) {
             Arrays.fill(row, ' ');
         }
 
-        // Initial terrain placement - matched with your original logic
+        // Fill terrain
         for (int x = 0; x < layout.length; x++) {
             for (int y = 0; y < layout[x].length(); y++) {
-                if (layout[x].charAt(y) == 'X') {
-                    for (int i = x * CELLSIZE; i < layoutScaled.length; i++) {
-                        for (int j = y * CELLHEIGHT; j < y * CELLHEIGHT + CELLHEIGHT; j++) {
-                            if (j < scaledWidth) {  // Add boundary check
-                                layoutScaled[i][j] = 'X';
-                            }
+                char ch = layout[x].charAt(y);
+                if (ch == 'X') {
+                    int baseX = x * CELLSIZE;
+                    for (int i = baseX; i < layoutScaled.length; i++) {
+                        int baseY = y * CELLHEIGHT;
+                        for (int j = baseY; j < baseY + CELLHEIGHT && j < layoutScaled[0].length; j++) {
+                            layoutScaled[i][j] = 'X';
                         }
+                    }
+                }
+            }
+        }
+
+        // Place tank markers
+        for (int x = 0; x < layout.length; x++) {
+            for (int y = 0; y < layout[x].length(); y++) {
+                char ch = layout[x].charAt(y);
+                if (ch != ' ' && ch != 'X' && ch != 'T' && ch >= 'A' && ch <= 'Z') {
+                    int tank_height = 0;
+                    int scaledY = y * CELLHEIGHT;
+
+                    for (int i = 0; i < layoutScaled.length; i++) {
+                        if (scaledY < layoutScaled[0].length && layoutScaled[i][scaledY] == 'X') {
+                            tank_height = i;
+                            break;
+                        }
+                    }
+
+                    if (tank_height > 0 && scaledY < layoutScaled[0].length) {
+                        layoutScaled[tank_height - 1][scaledY] = ch;
+                        System.out.println("Placed tank marker " + ch + " at " + scaledY + "," + (tank_height - 1));
                     }
                 }
             }
@@ -86,34 +114,67 @@ public class TerrainManager {
     }
 
     private void smoothingPass() {
-        char[][] smoothed = new char[scaledHeight][scaledWidth];
-
-        for (int y = 0; y + 31 < layoutScaled[0].length; y++) { // Moving average
-            int sum = 0;
-            for (int count = 0; count < 32; count++) {
-                int x = 0;
-                while (x < layoutScaled.length && layoutScaled[x][y + count] != 'X') {
-                    x++;
+        // Only store tank and tree markers, not terrain X's
+        Map<Point, Character> markers = new HashMap<>();
+        for (int x = 0; x < layoutScaled.length; x++) {
+            for (int y = 0; y < layoutScaled[0].length; y++) {
+                char ch = layoutScaled[x][y];
+                if ((ch >= 'A' && ch <= 'Z' && ch != 'X') || ch == 'T') {  // Exclude 'X' markers
+                    markers.put(new Point(x, y), ch);
                 }
-                sum += x;
-            }
-            int average = sum / 32;
-            smoothed[average][y] = 'X';
-            for (int a = average; a < smoothed.length; a++) { // Fills bottom of X
-                smoothed[a][y] = 'X';
             }
         }
 
-        // Copy exactly as in your original code
+        // Perform smoothing
+        char[][] smoothed = new char[scaledWidth][scaledHeight];
+        for (char[] row : smoothed) {
+            Arrays.fill(row, ' ');
+        }
+
+        for (int x = 0; x + 31 < smoothed[0].length; x++) {
+            int sum = 0;
+            for (int count = 0; count < 32 && (x + count) < smoothed[0].length; count++) {
+                int y = 0;
+                while (y < smoothed.length && layoutScaled[y][x + count] != 'X') {
+                    y++;
+                }
+                sum += y;
+            }
+            int average = sum / 32;
+            smoothed[average][x] = 'X';
+            for (int y = average; y < smoothed.length; y++) {
+                smoothed[y][x] = 'X';
+            }
+        }
+
+        // Copy smoothed terrain
         for (int i = 0; i < smoothed.length; i++) {
             for (int j = 0; j + 31 < smoothed[i].length; j++) {
                 layoutScaled[i][j] = smoothed[i][j];
             }
         }
+
+        // Restore markers at their original positions
+        for (Map.Entry<Point, Character> entry : markers.entrySet()) {
+            Point p = entry.getKey();
+            layoutScaled[p.x][p.y] = entry.getValue();
+
+            // Only log tank markers (A-Z), not trees
+            if (entry.getValue() >= 'A' && entry.getValue() <= 'Z' && entry.getValue() != 'X') {
+                System.out.println("Restored tank marker " + entry.getValue() +
+                        " at position " + p.x + "," + p.y);
+            }
+        }
     }
 
     private int findGroundLevel(int x) {
-        for (int y = 0; y < scaledHeight; y++) {
+        // Bounds checking
+        if (x < 0 || x >= layoutScaled[0].length) {
+            return scaledHeight;
+        }
+
+        // Find first terrain block
+        for (int y = 0; y < layoutScaled.length; y++) {
             if (layoutScaled[y][x] == 'X') {
                 return y;
             }
@@ -121,8 +182,35 @@ public class TerrainManager {
         return scaledHeight;
     }
 
+    public boolean isPositionSolid(int x, int y) {
+        // First check bounds
+        if (x < 0 || x >= layoutScaled[0].length || y < 0 || y >= layoutScaled.length) {
+            return false;
+        }
+
+        // Then check for terrain
+        return layoutScaled[y][x] == 'X';
+    }
+
+    public float getGroundLevelAt(int x) {
+        // Bounds checking
+        if (x < 0 || x >= layoutScaled[0].length) {
+            return scaledHeight;  // Return max height if out of bounds
+        }
+
+        // Find first solid ground from top
+        for (int y = 0; y < layoutScaled.length; y++) {
+            if (layoutScaled[y][x] == 'X') {
+                // Return position just above ground
+                return y - CELLHEIGHT;
+            }
+        }
+
+        // If no ground found, return bottom of map
+        return scaledHeight;
+    }
+
     public void placeTrees() {
-        // Place trees from original layout
         for (int y = 0; y < rawLayout.length; y++) {
             for (int x = 0; x < rawLayout[y].length(); x++) {
                 char cell = rawLayout[y].charAt(x);
@@ -134,56 +222,73 @@ public class TerrainManager {
     }
 
     private void placeTreeAtPosition(int baseX) {
-        // Add some randomness to tree position
+        if (baseX >= layoutScaled[0].length) return;
+
         int treeOffset = random.nextInt(CELLSIZE);
         int finalX = baseX + treeOffset;
 
-        // Find ground level at this position
-        int groundY = findGroundLevel(finalX);
+        if (finalX >= layoutScaled[0].length) return;
 
-        // Place tree if position is valid
-        if (groundY > 0 && groundY < scaledHeight) {
+        int groundY = findGroundLevel(finalX);
+        if (groundY > 0 && groundY < layoutScaled.length) {
             layoutScaled[groundY - 1][finalX] = 'T';
         }
     }
 
     public void update() {
-        // Handle any falling trees or terrain
         handleFallingObjects();
     }
 
     private void handleFallingObjects() {
-        // Process from bottom to top to handle falling correctly
-        for (int y = scaledHeight - 2; y >= 0; y--) {
-            for (int x = 0; x < scaledWidth; x++) {
-                // Check for floating trees
-                if (layoutScaled[y][x] == 'T' && layoutScaled[y + 1][x] == ' ') {
-                    // Move tree down
-                    layoutScaled[y][x] = ' ';
-                    layoutScaled[y + 1][x] = 'T';
+        for (int x = 0; x < layoutScaled.length; x++) {
+            for (int y = layoutScaled[0].length - 2; y >= 0; y--) {
+                if (layoutScaled[x][y] == 'T' && y + 1 < layoutScaled[0].length && layoutScaled[x][y + 1] == ' ') {
+                    layoutScaled[x][y] = ' ';
+                    layoutScaled[x][y + 1] = 'T';
                 }
             }
         }
     }
 
     public void createExplosion(int centerX, int centerY, int radius) {
-        // Bounds for the explosion area
-        int minX = Math.max(0, centerX - radius);
-        int maxX = Math.min(scaledWidth, centerX + radius);
-        int minY = Math.max(0, centerY - radius);
-        int maxY = Math.min(scaledHeight, centerY + radius);
+        // Store tree positions before explosion
+        Map<Point, Character> treePositions = new HashMap<>();
 
-        // Clear terrain within explosion radius
-        for (int y = minY; y < maxY; y++) {
-            for (int x = minX; x < maxX; x++) {
+        int minX = Math.max(0, centerX - radius);
+        int maxX = Math.min(layoutScaled[0].length - 1, centerX + radius);
+        int minY = Math.max(0, centerY - radius);
+        int maxY = Math.min(layoutScaled.length - 1, centerY + radius);
+
+        // Store tree positions before explosion
+        for (int y = minY; y <= maxY; y++) {
+            for (int x = minX; x <= maxX; x++) {
+                if (layoutScaled[y][x] == 'T') {
+                    treePositions.put(new Point(x, y), 'T');
+                }
+            }
+        }
+
+        // Create explosion
+        for (int y = minY; y <= maxY; y++) {
+            for (int x = minX; x <= maxX; x++) {
                 if (distance(x, y, centerX, centerY) <= radius) {
                     layoutScaled[y][x] = ' ';
                 }
             }
         }
 
-        // Apply physics after explosion
+        // Apply physics to terrain
         applyPhysicsAfterExplosion(minX, maxX, minY, maxY);
+
+        // Reposition trees on new terrain
+        for (Map.Entry<Point, Character> entry : treePositions.entrySet()) {
+            Point p = entry.getKey();
+            // Find new ground level for this tree
+            int newGroundY = findGroundLevel(p.x);
+            if (newGroundY > 0 && newGroundY < layoutScaled.length) {
+                layoutScaled[newGroundY - 1][p.x] = 'T';
+            }
+        }
 
         if (terrainDisplay != null) {
             terrainDisplay.notifyTerrainChanged();
@@ -194,51 +299,77 @@ public class TerrainManager {
         boolean changed;
         do {
             changed = false;
-            // Process from bottom to top
-            for (int y = maxY - 1; y >= minY; y--) {
-                for (int x = minX; x < maxX; x++) {
-                    // Handle falling terrain
-                    if (y + 1 < scaledHeight && layoutScaled[y][x] == 'X' && layoutScaled[y + 1][x] == ' ') {
-                        layoutScaled[y + 1][x] = 'X';
-                        layoutScaled[y][x] = ' ';
-                        changed = true;
-                    }
-                    // Handle falling trees
-                    else if (y + 1 < scaledHeight && layoutScaled[y][x] == 'T' && layoutScaled[y + 1][x] == ' ') {
-                        layoutScaled[y + 1][x] = 'T';
-                        layoutScaled[y][x] = ' ';
-                        changed = true;
+            for (int x = minX; x < maxX; x++) {
+                for (int y = maxY - 1; y >= minY; y--) {
+                    // Handle terrain falling
+                    if (y + 1 < layoutScaled.length) {
+                        if (layoutScaled[y][x] == 'X' && layoutScaled[y + 1][x] == ' ') {
+                            layoutScaled[y + 1][x] = layoutScaled[y][x];
+                            layoutScaled[y][x] = ' ';
+                            changed = true;
+                        }
                     }
                 }
             }
-        } while (changed); // Continue until no more changes occur
+        } while (changed);
+
+        // Handle trees after terrain has settled
+        for (int x = minX; x < maxX; x++) {
+            for (int y = maxY - 1; y >= minY; y--) {
+                if (layoutScaled[y][x] == 'T') {
+                    int groundY = findGroundLevel(x);
+                    if (groundY > y) {
+                        layoutScaled[y][x] = ' ';
+                        if (groundY - 1 < layoutScaled.length) {
+                            layoutScaled[groundY - 1][x] = 'T';
+                        }
+                    }
+                }
+            }
+        }
     }
 
     private float distance(int x1, int y1, int x2, int y2) {
         return (float) Math.sqrt(Math.pow(x2 - x1, 2) + Math.pow(y2 - y1, 2));
     }
 
-    // Helper methods used by other classes
-    public boolean isPositionSolid(int x, int y) {
-        if (x < 0 || x >= scaledWidth || y < 0 || y >= scaledHeight) {
-            return false;
-        }
-        return layoutScaled[y][x] == 'X';
-    }
-
-    public float getGroundLevelAt(int x) {
-        if (x < 0 || x >= scaledWidth) {
-            return scaledHeight;
-        }
-        int y = findGroundLevel(x);
-        return y - CELLHEIGHT;
-    }
-
-    // Getters
     public char[][] getLayoutScaled() { return layoutScaled; }
     public int getScaledWidth() { return scaledWidth; }
     public int getScaledHeight() { return scaledHeight; }
-    public char[][] getOriginalLayout() {
-        return originalLayout;
+    public char[][] getOriginalLayout() { return originalLayout; }
+
+    // Helper class for storing coordinates
+    private static class Point {
+        final int x, y;
+        Point(int x, int y) {
+            this.x = x;
+            this.y = y;
+        }
+
+        @Override
+        public boolean equals(Object o) {
+            if (this == o) return true;
+            if (o == null || getClass() != o.getClass()) return false;
+            Point point = (Point) o;
+            return x == point.x && y == point.y;
+        }
+
+        @Override
+        public int hashCode() {
+            return Objects.hash(x, y);
+        }
+    }
+
+    public void printTerrainStatus(float x, float y) {
+        int ix = (int)x;
+        int iy = (int)y;
+        System.out.println("Checking position: " + ix + "," + iy);
+        if (ix >= 0 && ix < layoutScaled[0].length && iy >= 0 && iy < layoutScaled.length) {
+            System.out.println("Terrain at position: " + layoutScaled[iy][ix]);
+            System.out.println("Ground level at x=" + ix + ": " + getGroundLevelAt(ix));
+        } else {
+            System.out.println("Position out of bounds");
+        }
     }
 }
+

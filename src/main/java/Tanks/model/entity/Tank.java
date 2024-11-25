@@ -50,7 +50,10 @@ public class Tank extends Entity {
     }
 
     private void handleFalling() {
-        if (!isOnGround()) {
+        boolean wasOnGround = !isFalling;
+        boolean nowOnGround = isOnGround();
+
+        if (!nowOnGround) {
             isFalling = true;
             if (fallDueToExplosion && parachute > 0) {
                 fallSpeed = 2;
@@ -62,8 +65,9 @@ public class Tank extends Entity {
                     fuel += 1;
                 }
             }
+            y += fallSpeed;
         } else {
-            if (isFalling) {
+            if (isFalling || !wasOnGround) {
                 if (parachuteDeployed) {
                     parachute--;
                     parachuteDeployed = false;
@@ -71,58 +75,60 @@ public class Tank extends Entity {
                 isFalling = false;
                 fallSpeed = 0;
                 fallDueToExplosion = false;
+                float groundLevel = terrainManager.getGroundLevelAt((int)x);
+                y = groundLevel;  // Snap to exact ground level when landing
             }
         }
-
-        if (isFalling) {
-            y += fallSpeed;
-        }
-    }
-
-    public void fallExplosion() {
-        this.fallDueToExplosion = true;
-    }
-
-    public boolean isBelowMap() {
-        return y >= terrainManager.getScaledHeight();
-    }
-
-    public void resetStats() {
-        health = 100;
-        fuel = 250;
     }
 
     public void moveLeft() {
         if (fuel > 0) {
-            x -= MOVE_SPEED;
-            y = getGroundLevel((int)x);
-            fuel -= Math.abs(MOVE_SPEED);
+            float newX = x - MOVE_SPEED;
+            // Check if new position would be valid
+            float groundLevel = terrainManager.getGroundLevelAt((int)newX);
+            if (groundLevel < terrainManager.getScaledHeight()) {
+                x = newX;
+                y = groundLevel;
+                fuel -= Math.abs(MOVE_SPEED);
+            }
         }
     }
 
     public void moveRight() {
         if (fuel > 0) {
-            x += MOVE_SPEED;
-            y = getGroundLevel((int)x);
-            fuel -= Math.abs(MOVE_SPEED);
+            float newX = x + MOVE_SPEED;
+            // Check if new position would be valid
+            float groundLevel = terrainManager.getGroundLevelAt((int)newX);
+            if (groundLevel < terrainManager.getScaledHeight()) {
+                x = newX;
+                y = groundLevel;
+                fuel -= Math.abs(MOVE_SPEED);
+            }
         }
     }
 
     public void turnTurret(float amount) {
         angle += amount;
         // Clamp angle between min and max values
-        float minAngle = -(float)Math.PI + 0.21f;
-        float maxAngle = -0.21f;
-        angle = Math.max(minAngle, Math.min(maxAngle, angle));
+        angle = Math.max(MIN_ANGLE, Math.min(MAX_ANGLE, angle));
     }
 
     private float getGroundLevel(int x) {
         return terrainManager.getGroundLevelAt(x);
     }
 
-    private boolean isOnGround() {
+    public boolean isOnGround() {
         int tankX = Math.round(x);
-        return terrainManager.isPositionSolid(tankX, Math.round(y + TANKHEIGHT));
+        float groundLevel = terrainManager.getGroundLevelAt(tankX);
+        return y >= groundLevel - 1 && y <= groundLevel + 1;
+    }
+
+    public boolean isBelowMap() {
+        return y >= terrainManager.getScaledHeight() - 32;
+    }
+
+    public void fallExplosion() {
+        this.fallDueToExplosion = true;
     }
 
     // Power-ups
@@ -145,6 +151,11 @@ public class Tank extends Entity {
             parachute++;
             score -= 15;
         }
+    }
+
+    public void resetStats() {
+        health = 100;
+        fuel = 250;
     }
 
     // Getters and setters

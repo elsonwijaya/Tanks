@@ -1,6 +1,7 @@
 package Tanks;
 
 import processing.core.PApplet;
+import java.util.Arrays;
 
 public class Projectile{
 
@@ -118,22 +119,30 @@ public class Projectile{
      * Handles damage to tanks due to projectile explosion
      */
     public void damage() {
+        boolean otherTanksAlive = false;
         for (Tank tank : App.tanks) {
             float tankX = tank.startingPositionX + ((CELLSIZE / 5) / 2);
             float tankY = tank.startingPositionY;
             float distance = (float) Math.sqrt(Math.pow(rx - tankX, 2) + Math.pow(ry - tankY, 2));
-            float damage = 0;
 
             if (distance <= explosionRadius) {
-                damage = 2 * (explosionRadius - distance);
+                float damage = 2 * (explosionRadius - distance);
                 tank.setTankHealth(tank.getTankHealth() - (int) damage);
 
                 if (this.owner != tank) {
                     this.owner.addScore((int) damage);
                 }
-
                 tank.fallExplosion();
-            } 
+            }
+            // Check if there are any other tanks still alive
+            if (tank != owner && tank.getTankHealth() > 0) {
+                otherTanksAlive = true;
+            }
+        }
+
+        // Only end level if no other tanks are alive
+        if (!otherTanksAlive) {
+            App.setLevelOver();
         }
     }
     
@@ -141,44 +150,115 @@ public class Projectile{
      * Handles destroying the terrain due to projectile explosion 
      */
     public void destroyTerrain() {
-        int minX = Math.max(0, (int) rx - explosionRadius);
-        int maxX = Math.min(App.layoutScaled[0].length, (int) rx + explosionRadius);
-        int minY = Math.max(0, (int) ry - explosionRadius);
-        int maxY = Math.min(App.layoutScaled.length, (int) ry + explosionRadius);
-    
-        for (int i = minX; i < maxX; i++) {
-            for (int j = minY; j < maxY; j++) {
-                if (PApplet.dist(rx, ry, i, j) <= explosionRadius) {
-                    App.layoutScaled[j][i] = ' ';
-                }
-            }
+        char[][] tempBuffer = new char[App.layoutScaled.length][App.layoutScaled[0].length];
+        for (int i = 0; i < App.layoutScaled.length; i++) {
+            tempBuffer[i] = Arrays.copyOf(App.layoutScaled[i], App.layoutScaled[i].length);
         }
 
-        //Handles the trees 
-        for (int i = minX; i < maxX; i++) {
-            for (int j = minY; j < maxY; j++) {
-                if (checkTree(i, j)) {
-                    int newJ = j;
-                    while (newJ + 1 < App.layoutScaled.length && App.layoutScaled[newJ + 1][i] == ' ') {
-                        newJ++;
-                    } 
-                    App.layoutScaled[j][i] = ' ';
-                    App.layoutScaled[newJ][i] = 'T';
-                }
-            }
-        }
+        // Create smoother circular destruction using finer angle steps
+        for (float angle = 0; angle < 2 * Math.PI; angle += 0.05) {
+            for (float r = 0; r <= explosionRadius; r += 0.25) {
+                int x = Math.round(rx + r * (float)Math.cos(angle));
+                int y = Math.round(ry + r * (float)Math.sin(angle));
 
-
-        for (int y = minY + 1; y < maxY; y++) {
-            for (int x = minX; x < maxX; x++) {
-                if (App.layoutScaled[y][x] == ' ' && App.layoutScaled[y - 1][x] == 'X') {
-                    int newY = y;
-                    while (newY > 0 && App.layoutScaled[newY - 1][x] == 'X') {
-                        App.layoutScaled[newY][x] = 'X';
-                        App.layoutScaled[newY - 1][x] = ' ';
-                        newY--;
+                // Add slight randomness at explosion edge for natural look
+                float distFromCenter = PApplet.dist(rx, ry, x, y);
+                if (x >= 0 && x < App.layoutScaled[0].length &&
+                        y >= 0 && y < App.layoutScaled.length) {
+                    if (distFromCenter < explosionRadius - 2) {
+                        tempBuffer[y][x] = ' ';
+                    }
+                    else if (distFromCenter <= explosionRadius) {
+                        // Smoother edge transition
+                        if (Math.random() > (distFromCenter - (explosionRadius - 2)) / 2) {
+                            tempBuffer[y][x] = ' ';
+                        }
                     }
                 }
+            }
+        }
+
+        // Secondary pass to smooth jagged edges
+        char[][] smoothedBuffer = new char[App.layoutScaled.length][App.layoutScaled[0].length];
+        for (int i = 0; i < App.layoutScaled.length; i++) {
+            smoothedBuffer[i] = Arrays.copyOf(tempBuffer[i], tempBuffer[i].length);
+        }
+
+        // Smooth edges using 3x3 window
+        for (int y = 1; y < App.layoutScaled.length - 1; y++) {
+            for (int x = 1; x < App.layoutScaled[0].length - 1; x++) {
+                int emptyCount = 0;
+                for (int dy = -1; dy <= 1; dy++) {
+                    for (int dx = -1; dx <= 1; dx++) {
+                        if (tempBuffer[y + dy][x + dx] == ' ') {
+                            emptyCount++;
+                        }
+                    }
+                }
+                if (emptyCount >= 6) {  // If majority of neighbors are empty
+                    smoothedBuffer[y][x] = ' ';
+                }
+            }
+        }
+
+        // Copy smoothed changes back
+        for (int i = 0; i < App.layoutScaled.length; i++) {
+            for (int j = 0; j < App.layoutScaled[0].length; j++) {
+                App.layoutScaled[i][j] = smoothedBuffer[i][j];
+            }
+        }
+
+        // Handle terrain falling after destruction
+        boolean changed;
+        do {
+            changed = false;
+            for (int x = 0; x < App.layoutScaled[0].length; x++) {
+                int emptySpaceY = -1;
+                for (int y = App.layoutScaled.length - 1; y >= 0; y--) {
+                    if (App.layoutScaled[y][x] == ' ') {
+                        emptySpaceY = y;
+                        break;
+                    }
+                }
+
+                if (emptySpaceY != -1) {
+                    for (int y = emptySpaceY - 1; y >= 0; y--) {
+                        if (App.layoutScaled[y][x] != ' ') {
+                            App.layoutScaled[emptySpaceY][x] = App.layoutScaled[y][x];
+                            App.layoutScaled[y][x] = ' ';
+                            emptySpaceY--;
+                            changed = true;
+                        }
+                    }
+                }
+            }
+        } while (changed);
+
+        handleTrees(0, App.layoutScaled[0].length - 1, 0, App.layoutScaled.length - 1);
+    }
+
+    private void handleTrees(int minX, int maxX, int minY, int maxY) {
+        for (int x = minX; x <= maxX; x++) {
+            int groundY = -1;
+            boolean hasTree = false;
+            int treeY = -1;
+
+            // Find highest tree and ground level in this column
+            for (int y = 0; y < App.layoutScaled.length; y++) {
+                if (App.layoutScaled[y][x] == 'T') {
+                    hasTree = true;
+                    treeY = y;
+                }
+                if (App.layoutScaled[y][x] == 'X') {
+                    groundY = y;
+                    break;
+                }
+            }
+
+            // If there's a tree and ground, place tree on ground
+            if (hasTree && groundY > 0) {
+                App.layoutScaled[treeY][x] = ' ';
+                App.layoutScaled[groundY - 1][x] = 'T';
             }
         }
     }
@@ -201,6 +281,10 @@ public class Projectile{
         drawExplosion(p, (int) rx, (int) ry, explosionRadius);
         damage();
         destroyTerrain();
+    }
+
+    public boolean isOutOfBounds() {
+        return rx < 0 || rx > App.WIDTH || ry < 0 || ry > App.HEIGHT;
     }
 
 }

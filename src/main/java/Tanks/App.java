@@ -120,6 +120,9 @@ public class App extends PApplet {
     public int currentLevelIndex = 0;
     public boolean isLevelOver = false;
     public boolean isGameOver = false;
+    private boolean isTransitioning = false;
+    private int transitionTimer = 0;
+    private static final int TRANSITION_DELAY = 30; // 0.5 seconds at 60 FPS
     
 
     /**
@@ -366,13 +369,27 @@ public class App extends PApplet {
      * Initializes the tanks to create new tank objects and add them to a list.
      */
     public void initializeTanks() {
+        // Store previous scores before clearing tanks
+        Map<Character, Integer> previousScores = new HashMap<>();
+        for (Tank tank : tanks) {
+            previousScores.put(tank.getName(), tank.getScore());
+        }
+
         tanks.clear();
+        tanksCopy.clear(); // Clear and rebuild tanksCopy too
+
         for (int x = 0; x < layoutScaled.length; x++) {
             for (int y = 0; y < layoutScaled[x].length; y++) {
                 char ch = layoutScaled[x][y];
                 if (ch != ' ' && players.containsKey(ch)) {
                     int[] currentColor = players.get(ch);
                     Tank object = new Tank(y, x - CELLSIZE, currentColor, ch);
+
+                    // Restore previous score if it exists
+                    if (previousScores.containsKey(ch)) {
+                        object.setScore(previousScores.get(ch));
+                    }
+
                     tanks.add(object);
                     tanksCopy.add(object);
                     if (!playerScores.containsKey(ch)) {
@@ -381,15 +398,14 @@ public class App extends PApplet {
                 }
             }
         }
-        
-        //Sort the tanks in order
+
+        // Sort the tanks in order
         Collections.sort(tanks, new Comparator<Tank>() {
             public int compare(Tank firstTank, Tank secondTank) {
                 int comparator = Character.compare(firstTank.getName(), secondTank.getName());
                 if (comparator == 0) {
                     return Integer.compare(firstTank.getName(), secondTank.getName());
-                }
-                else {
+                } else {
                     return comparator;
                 }
             }
@@ -399,8 +415,7 @@ public class App extends PApplet {
                 int comparator = Character.compare(firstTank.getName(), secondTank.getName());
                 if (comparator == 0) {
                     return Integer.compare(firstTank.getName(), secondTank.getName());
-                }
-                else {
+                } else {
                     return comparator;
                 }
             }
@@ -441,23 +456,40 @@ public class App extends PApplet {
     }
 
     public void nextTurn() {
-        // Remove dead tanks before changing turns
+        // Remember the score of dying tank
+        boolean currentTankDied = false;
+        if (currentTank.getTankHealth() <= 0 || currentTank.isOutOfBounds()) {
+            currentTank.setScore(0); // Reset score if tank kills itself
+            currentTankDied = true;
+        }
+
+        // Remove dead tanks
         Iterator<Tank> iterator = tanks.iterator();
         while (iterator.hasNext()) {
             Tank tank = iterator.next();
             if (tank.getTankHealth() <= 0 || tank.isOutOfBounds()) {
-                if (tank == currentTank) {
-                    currentTurnIndex = currentTurnIndex % (tanks.size() - 1); // Adjust index before removal
-                } else if (tank.getName() < currentTank.getName()) {
-                    currentTurnIndex--; // Decrement index if removed tank was before current
+                // Update score in tanksCopy before removal
+                for (Tank copyTank : tanksCopy) {
+                    if (copyTank.getName() == tank.getName()) {
+                        copyTank.setScore(tank.getScore());
+                        break;
+                    }
                 }
                 iterator.remove();
             }
         }
 
-        // Advance to next turn
+        // Move to next alive tank
         if (tanks.size() > 1) {
-            currentTurnIndex = (currentTurnIndex + 1) % tanks.size();
+            if (!currentTankDied) {
+                // Normal turn progression
+                currentTurnIndex = (currentTurnIndex + 1) % tanks.size();
+            } else {
+                // If current tank died, don't increment turn index
+                // This will effectively skip to the next tank in the list
+                // since the current tank was removed
+                currentTurnIndex = currentTurnIndex % tanks.size();
+            }
             currentTank = tanks.get(currentTurnIndex);
         }
     }
@@ -476,13 +508,14 @@ public class App extends PApplet {
      */
 	@Override
     public void keyPressed(KeyEvent event){
-        int key = event.getKeyCode();
-
-        if (tanks.size() == 1) {
+        // Ignore key presses during transitions, when game is over, or when projectile is active
+        if (isTransitioning || isGameOver || !projectiles.isEmpty()) {
             return;
         }
 
+        int key = event.getKeyCode();
         Tank currentTank = tanks.get(currentTurnIndex);
+        
         if (key == UP) {
             currentTank.turnTurretLeft((float) 0.05);
             //turret moves left +3 rad /s
@@ -540,7 +573,7 @@ public class App extends PApplet {
 
         // Health Bar
         fill(0);
-        float currentHealth = (float) currentTank.getTankHealth();
+        float currentHealth = Math.max(0, (float) currentTank.getTankHealth());
         text("Health:", 320, 26);
 
         float maxHealth = 100;
@@ -602,17 +635,18 @@ public class App extends PApplet {
         textSize(16);
         int startX = 700;
         int startY = 70;
-        
-        pushStyle(); //Save all current things that have been drawn
 
-        //Scores
+        pushStyle(); // Save all current things that have been drawn
+
+        // Scores
         noFill();
         stroke(0); // Black Border
         strokeWeight(3); // Thickness
         rect(startX, startY, 150, 20);
         fill(0);
         text("Scores:", startX + 8, startY + 16);
-        //Player Scores Border
+
+        // Player Scores Border
         noFill();
         stroke(0); // Black Border
         strokeWeight(3); // Thickness
@@ -620,27 +654,32 @@ public class App extends PApplet {
 
         int changeY = 0;
         Set<Character> displayedPlayers = new HashSet<>();
+
         for (Tank currentTank : tanksCopy) {
             if (!displayedPlayers.contains(currentTank.getName())) {
                 displayedPlayers.add(currentTank.getName());
 
+                // Find matching tank in active tanks list to get current score
+                int currentScore = 0;
+                for (Tank activeTank : tanks) {
+                    if (activeTank.getName() == currentTank.getName()) {
+                        currentScore = activeTank.getScore();
+                        break;
+                    }
+                }
+
                 Character currentPlayerName = currentTank.getName();
                 String currentPlayerNameString = Character.toString(currentPlayerName);
                 String currentPlayer = "Player " + currentPlayerNameString;
-                
+
                 fill(currentTank.color[0], currentTank.color[1], currentTank.color[2]);
                 text(currentPlayer, startX + 5, startY + 40 + changeY);
-                
-                playerScores.put(currentTank.getName(), currentTank.getScore());
-                int currentScore = playerScores.get(currentTank.getName());
-                
-                fill(currentTank.color[0], currentTank.color[1], currentTank.color[2]);
                 text(currentScore, startX + 115, startY + 40 + changeY);
                 changeY += 25;
             }
         }
 
-        popStyle(); //Restore all things that have been drawn
+        popStyle(); // Restore all things that have been drawn
     }
 
     /**
@@ -653,9 +692,42 @@ public class App extends PApplet {
             textAlign(CENTER);
             textSize(32);
 
-            Tank winner = Collections.max(tanks, Comparator.comparingInt(Tank::getScore));
-            String message = "Player " + winner.getName() + " wins";
-            text(message, WIDTH/2, HEIGHT/2 - 100);
+            // Sort tanks by score
+            java.util.List<Tank> sortedTanks = new ArrayList<>(tanksCopy);
+            Collections.sort(sortedTanks, (t1, t2) -> Integer.compare(t2.getScore(), t1.getScore()));
+
+            // Check for tie (if highest score appears multiple times)
+            int highestScore = sortedTanks.get(0).getScore();
+            java.util.List<Tank> winners = sortedTanks.stream()
+                .filter(t -> t.getScore() == highestScore)
+                .collect(java.util.stream.Collectors.toList());
+
+            // Display winner(s)
+            if (winners.size() == 1) {
+                String message = "Player " + winners.get(0).getName() + " wins!";
+                text(message, WIDTH/2, HEIGHT/2 - 100);
+            } else {
+                String tieMessage = "Tie between Players ";
+                for (int i = 0; i < winners.size(); i++) {
+                    tieMessage += winners.get(i).getName();
+                    if (i < winners.size() - 1) {
+                        tieMessage += " & ";
+                    }
+                }
+                text(tieMessage, WIDTH/2, HEIGHT/2 - 100);
+            }
+
+            // Display final scoreboard
+            textSize(24);
+            text("Final Scores:", WIDTH/2, HEIGHT/2 - 40);
+            
+            int yOffset = 0;
+            for (Tank tank : sortedTanks) {
+                fill(tank.getColor()[0], tank.getColor()[1], tank.getColor()[2]);
+                String scoreText = String.format("Player %c: %d", tank.getName(), tank.getScore());
+                text(scoreText, WIDTH/2, HEIGHT/2 + yOffset);
+                yOffset += 30;
+            }
         }
     }
 
@@ -679,27 +751,40 @@ public class App extends PApplet {
      */
     public void changeLevel() {
         if (isLevelOver) {
-            if (tanks.size() <= 1) {
-                delay(2000);
-                currentLevelIndex++;
-                if (currentLevelIndex < layouts.size()) {
-                    loadLevel(layouts.get(currentLevelIndex));
-                    smoothing(layoutScaled);
-                    smoothing(layoutScaled);
-                    putTree();
-                    initializeTanks();
-                    for (Tank tank : tanks) {
-                        tank.resetStats();
-                    }
-                    currentTurnIndex = 0;
-                    currentTank = tanks.get(currentTurnIndex);
-                    isLevelOver = false;
+            if (!isTransitioning) {
+                // Start transition only if there are no active projectiles
+                if (projectiles.isEmpty()) {
+                    isTransitioning = true;
+                    transitionTimer = TRANSITION_DELAY;
                 }
-                else {
-                    isGameOver = true;
+            } else {
+                // Count down the transition timer
+                if (transitionTimer > 0) {
+                    transitionTimer--;
+                    return;
+                }
+
+                // Proceed with level change after delay
+                if (tanks.size() <= 1) {
+                    currentLevelIndex++;
+                    if (currentLevelIndex < layouts.size()) {
+                        loadLevel(layouts.get(currentLevelIndex));
+                        smoothing(layoutScaled);
+                        smoothing(layoutScaled);
+                        putTree();
+                        initializeTanks();
+                        for (Tank tank : tanks) {
+                            tank.resetStats();
+                        }
+                        currentTurnIndex = 0;
+                        currentTank = tanks.get(currentTurnIndex);
+                        isLevelOver = false;
+                        isTransitioning = false;
+                    } else {
+                        isGameOver = true;
+                    }
                 }
             }
-
         }
     }
 

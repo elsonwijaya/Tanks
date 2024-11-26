@@ -2,36 +2,46 @@ plugins {
     id 'java'
     id 'application'
     id 'jacoco'
+    id 'org.beryx.jlink' version '2.26.0'
 }
+
+group = 'Tanks'
+version = '1.0-SNAPSHOT'
 
 repositories {
     mavenCentral()
-    // Add the official Processing repository
     maven {
         url "https://repo1.maven.org/maven2/"
     }
 }
 
-dependencies {
-    // Processing Core and dependencies
-    implementation 'org.processing:core:3.3.7'
+sourceCompatibility = '17'
+targetCompatibility = '17'
 
-    // Checker Framework
-    implementation 'org.checkerframework:checker-qual:3.32.0'
-
-    // Test dependencies
-    testImplementation 'junit:junit:4.13.2'
+tasks.withType(JavaCompile) {
+    options.encoding = 'UTF-8'
+    options.compilerArgs += [
+            '--add-reads', 'tanks.game=ALL-UNNAMED'
+    ]
 }
 
 application {
     mainClass = 'Tanks.App'
+    mainModule = 'tanks.game'
 }
 
-// Configure Java 17
-java {
-    toolchain {
-        languageVersion = JavaLanguageVersion.of(17)
-    }
+run {
+    jvmArgs = [
+            '--add-reads', 'tanks.game=ALL-UNNAMED',
+            '--add-opens', 'tanks.game/Tanks=ALL-UNNAMED',
+            '--add-exports', 'java.desktop/sun.java2d=ALL-UNNAMED'
+    ]
+}
+
+dependencies {
+    implementation 'org.processing:core:3.3.7'
+    implementation 'org.checkerframework:checker-qual:3.32.0'
+    testImplementation 'junit:junit:4.13.2'
 }
 
 sourceSets {
@@ -42,16 +52,63 @@ sourceSets {
     }
 }
 
-tasks.withType(ProcessResources) {
+processResources {
     duplicatesStrategy = DuplicatesStrategy.INCLUDE
 }
 
-run {
-    standardInput = System.in
+jlink {
+    options = ['--strip-debug', '--compress', '2', '--no-header-files', '--no-man-pages']
+    launcher {
+        name = 'Tanks'
+        noConsole = true
+        jvmArgs = [
+                '--add-reads', 'tanks.game=ALL-UNNAMED',
+                '--add-opens', 'tanks.game/Tanks=ALL-UNNAMED',
+                '--add-opens', 'java.base/java.lang=ALL-UNNAMED',
+                '--add-opens', 'java.base/java.io=ALL-UNNAMED',
+                '--add-exports', 'java.desktop/sun.java2d=ALL-UNNAMED',
+                '-Dfile.encoding=UTF-8'
+        ]
+    }
+
+    forceMerge('org.processing.core', 'org.checkerframework.checker.qual')
+    addOptions('--verbose')
+
+    mergedModule {
+        requires('java.desktop')
+        additive = true
+        uses('processing.core.PApplet')
+    }
+
+    jpackage {
+        appVersion = '1.0.0'
+        outputDir = "installers"
+        imageName = "Tanks"
+        skipInstaller = false
+
+        installerName = 'Tanks'
+        installerType = 'exe'
+
+        resourceDir = file("src/main/resources")
+
+        installerOptions = [
+                '--win-menu',
+                '--win-dir-chooser',
+                '--win-shortcut',
+                '--win-per-user-install',
+                '--win-menu-group', 'Tanks',
+                '--description', 'Tanks Game',
+                '--verbose'
+        ]
+    }
 }
 
-// Ensure Gradle uses UTF-8
-tasks.withType(JavaCompile) {
-    options.encoding = 'UTF-8'
-    options.compilerArgs += ['-Xlint:deprecation']
+tasks.named('jpackage').configure {
+    doFirst {
+        copy {
+            from 'src/main/resources'
+            into 'build/jpackage/Tanks/app'
+            include '**/*'
+        }
+    }
 }

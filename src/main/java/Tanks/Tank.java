@@ -205,16 +205,20 @@ public class Tank{
      * @param explosionRadius, the radius of explosion
      */
     public void tankExplosion(int explosionRadius) {
-        float tankX = startingPositionX;
-        float tankY = startingPositionY;
         for (Tank tank : App.tanks) {
-            float distance = PApplet.dist(x, y, tankX, tankY);
-            if (distance <= explosionRadius) {
-                float damage = 2 * (explosionRadius - distance);
-                tank.setTankHealth(tank.getTankHealth() - (int) damage);
-            } 
+            if (tank != this) {
+                float targetX = tank.startingPositionX + ((CELLSIZE / 5) / 2);
+                float targetY = tank.startingPositionY;
+                float distance = PApplet.dist(x, y, targetX, targetY);
+
+                if (distance <= explosionRadius) {
+                    float damage = 2 * (explosionRadius - distance);
+                    tank.setTankHealth(tank.getTankHealth() - (int) damage);
+                }
+            }
         }
 
+        // Destroy terrain in radius
         int minX = Math.max(0, (int) x - explosionRadius);
         int maxX = Math.min(App.layoutScaled[0].length, (int) x + explosionRadius);
         int minY = Math.max(0, (int) y - explosionRadius);
@@ -392,9 +396,13 @@ public class Tank{
      * Creates a new projectile object and add's them to a list
      * @param wind, current wind, which is randomized from App.java
      */
-    public void fireProjectile(int wind) {
-        Projectile projectile = new Projectile(turretX, turretY, angle, color, power, wind, this);
-        App.projectiles.add(projectile);
+    public boolean fireProjectile(int wind) {
+        if (App.projectiles.isEmpty()) {
+            Projectile projectile = new Projectile(turretX, turretY, angle, color, power, wind, this);
+            App.projectiles.add(projectile);
+            return true;
+        }
+        return false;
     }
 
     /**
@@ -459,5 +467,9 @@ public class Tank{
      */
     public void addScore(int score) {
         this.score += score;
+    }
+
+    public boolean isOutOfBounds() {
+        return x < 0 || x > App.WIDTH || y > App.HEIGHT;
     }
 }

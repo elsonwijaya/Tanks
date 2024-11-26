@@ -17,6 +17,7 @@ import java.util.*;
 
 public class App extends PApplet {
 
+    public static App instance;
     /**
      * Size of a cell in pixels
      */
@@ -126,6 +127,7 @@ public class App extends PApplet {
      */
     public App() {
         this.configPath = "config.json";
+        instance = this;
     }
 
     /**
@@ -410,27 +412,10 @@ public class App extends PApplet {
      * Draws out the tanks in the terrain.
      */
     public void drawTank() {
-        Iterator<Tank> iterator = tanks.iterator();
-        while (iterator.hasNext()) {
-            Tank tank = iterator.next();
-            //tank.display(this);
-            int tankHealth = tank.getTankHealth();
-            if (tankHealth <= 0) {
-                if (tank.isBelowMap()) {
-                    tank.tankExplosion(15);
-                    iterator.remove();
-                } 
-                else {
-                    tank.tankExplosion(30);
-                    iterator.remove();
-                }
-            }
-            else {
-                tank.display(this);
-
-                if (tank.parachuteDeployed) {
-                    image(parachuteImage, tank.x - 12, tank.y - 10);
-                }
+        for (Tank tank : tanks) {
+            tank.display(this);
+            if (tank.parachuteDeployed) {
+                image(parachuteImage, tank.x - 12, tank.y - 10);
             }
         }
     }
@@ -442,19 +427,39 @@ public class App extends PApplet {
         Iterator<Projectile> iterator = projectiles.iterator();
         while (iterator.hasNext()) {
             Projectile projectile = iterator.next();
-            if (projectile.checkCollisionWithTerrain(projectile.rx, projectile.ry)) {
-                projectile.explode(this);
+            if (projectile.exploded || projectile.checkCollisionWithTerrain(projectile.rx, projectile.ry) || projectile.isOutOfBounds()) {
+                if (!projectile.isOutOfBounds()) {
+                    projectile.explode(this);
+                }
                 iterator.remove();
-            }
-            else {
-                projectile.drawProjectile(this);    
+                nextTurn(); // Move turn change here
+                windRandom = random.nextInt(71) - 35;
+            } else {
+                projectile.drawProjectile(this);
             }
         }
     }
 
     public void nextTurn() {
-        currentTurnIndex = (currentTurnIndex + 1) % tanks.size();
-        currentTank = tanks.get(currentTurnIndex);
+        // Remove dead tanks before changing turns
+        Iterator<Tank> iterator = tanks.iterator();
+        while (iterator.hasNext()) {
+            Tank tank = iterator.next();
+            if (tank.getTankHealth() <= 0 || tank.isOutOfBounds()) {
+                if (tank == currentTank) {
+                    currentTurnIndex = currentTurnIndex % (tanks.size() - 1); // Adjust index before removal
+                } else if (tank.getName() < currentTank.getName()) {
+                    currentTurnIndex--; // Decrement index if removed tank was before current
+                }
+                iterator.remove();
+            }
+        }
+
+        // Advance to next turn
+        if (tanks.size() > 1) {
+            currentTurnIndex = (currentTurnIndex + 1) % tanks.size();
+            currentTank = tanks.get(currentTurnIndex);
+        }
     }
 
     /**
@@ -503,10 +508,9 @@ public class App extends PApplet {
             //Decrease turret power - 36 units / sec
         }
         else if (key == 32) { // Spacebar key
-            //currentTank = tanks.get(currentTurnIndex);
-            currentTank.fireProjectile(windRandom);
-            nextTurn();
-            windRandom = random.nextInt(71) - 35; // Change wind after turn change
+            if (currentTurnIndex < tanks.size()) {
+                currentTank.fireProjectile(windRandom); // Remove turn change from here
+            }
         }
         else if (key == 'r' || key == 'R') {
             currentTank.repair();
@@ -659,7 +663,13 @@ public class App extends PApplet {
      * Check whether the current level has ended
      */
     public void checkLevelEnd() {
-        if (tanks.size() <= 1 && !isLevelOver) {
+        int aliveTanks = 0;
+        for (Tank tank : tanks) {
+            if (tank.getTankHealth() > 0) {
+                aliveTanks++;
+            }
+        }
+        if (aliveTanks <= 1 && !isLevelOver) {
             isLevelOver = true;
         }
     }
@@ -691,6 +701,11 @@ public class App extends PApplet {
             }
 
         }
+    }
+
+    public static void setLevelOver() {
+        currentTank = tanks.get(0);
+        instance.isLevelOver = true;
     }
 
     /**

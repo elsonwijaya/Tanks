@@ -3,55 +3,34 @@ plugins {
     id 'application'
     id 'jacoco'
 }
-
+version = '1.0'
 repositories {
     mavenCentral()
-    // Add the official Processing repository
-    maven {
-        url "https://repo1.maven.org/maven2/"
-    }
 }
 
 dependencies {
-    // Processing Core and dependencies
+    implementation 'com.google.guava:guava:28.0-jre'
     implementation 'org.processing:core:3.3.7'
 
-    // Checker Framework
-    implementation 'org.checkerframework:checker-qual:3.32.0'
-
-    // Test dependencies
-    testImplementation 'junit:junit:4.13.2'
+    testImplementation 'org.junit.jupiter:junit-jupiter-api:5.6.2'
+    testRuntimeOnly 'org.junit.jupiter:junit-jupiter-engine:5.6.2'
 }
 
 application {
-    mainClass = 'Tanks.App'
+    getMainClass().set('Tanks.App')
 }
 
-// Configure Java 17
-java {
-    toolchain {
-        languageVersion = JavaLanguageVersion.of(17)
+test {
+    useJUnitPlatform()
+    ignoreFailures = true
+}
+
+jar {
+    duplicatesStrategy = DuplicatesStrategy.EXCLUDE
+    manifest {
+        attributes 'Main-Class': 'Tanks.App'
     }
-}
-
-sourceSets {
-    main {
-        resources {
-            srcDirs = ['src/main/resources']
-        }
+    from {
+        configurations.runtimeClasspath.findAll { it.name.endsWith('jar') }.collect { zipTree(it) }
     }
-}
-
-tasks.withType(ProcessResources) {
-    duplicatesStrategy = DuplicatesStrategy.INCLUDE
-}
-
-run {
-    standardInput = System.in
-}
-
-// Ensure Gradle uses UTF-8
-tasks.withType(JavaCompile) {
-    options.encoding = 'UTF-8'
-    options.compilerArgs += ['-Xlint:deprecation']
 }

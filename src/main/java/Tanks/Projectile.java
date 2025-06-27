@@ -127,10 +127,12 @@ public class Projectile{
 
             if (distance <= explosionRadius) {
                 float damage = 2 * (explosionRadius - distance);
-                tank.setTankHealth(tank.getTankHealth() - (int) damage);
+                int newHealth = Math.max(0, tank.getTankHealth() - (int) damage);
+                int actualDamage = tank.getTankHealth() - newHealth;
+                tank.setTankHealth(newHealth);
 
                 if (this.owner != tank) {
-                    this.owner.addScore((int) damage);
+                    this.owner.addScore(actualDamage);
                 }
                 tank.fallExplosion();
             }

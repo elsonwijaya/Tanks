@@ -3,6 +3,7 @@ package Tanks;
 import org.checkerframework.checker.units.qual.A;
 import processing.core.PApplet;
 import processing.core.PImage;
+import processing.core.PConstants;
 import processing.data.JSONArray;
 import processing.data.JSONObject;
 import processing.event.KeyEvent;
@@ -11,6 +12,7 @@ import processing.event.MouseEvent;
 import java.awt.*;
 import java.awt.geom.AffineTransform;
 import java.awt.image.BufferedImage;
+import javax.imageio.ImageIO;
 
 import java.io.*;
 import java.util.*;
@@ -120,6 +122,9 @@ public class App extends PApplet {
     public int currentLevelIndex = 0;
     public boolean isLevelOver = false;
     public boolean isGameOver = false;
+    private boolean isTransitioning = false;
+    private int transitionTimer = 0;
+    private static final int TRANSITION_DELAY = 30; // 0.5 seconds at 60 FPS
     
 
     /**
@@ -128,6 +133,56 @@ public class App extends PApplet {
     public App() {
         this.configPath = "config.json";
         instance = this;
+    }
+
+    private PImage loadGameResource(String filename) {
+        // First try: Load from the classpath using resource stream
+        try {
+            InputStream resourceStream = getClass().getClassLoader().getResourceAsStream("Tanks/" + filename);
+            if (resourceStream != null) {
+                byte[] bytes = resourceStream.readAllBytes();
+                return loadImage(new ByteArrayInputStream(bytes), filename);
+            }
+        } catch (Exception e) {
+            System.err.println("Failed to load from classpath: " + filename);
+        }
+
+        // Second try: Load from the application directory
+        try {
+            String appPath = System.getProperty("user.dir");
+            String resourcePath = appPath + "/resources/Tanks/" + filename;
+            File resourceFile = new File(resourcePath);
+            if (resourceFile.exists()) {
+                return loadImage(resourcePath);
+            }
+        } catch (Exception e) {
+            System.err.println("Failed to load from app directory: " + filename);
+        }
+
+        // Third try: Load from relative path
+        try {
+            if (new File("resources/Tanks/" + filename).exists()) {
+                return loadImage("resources/Tanks/" + filename);
+            }
+        } catch (Exception e) {
+            System.err.println("Failed to load from relative path: " + filename);
+        }
+
+        System.err.println("Could not load resource: " + filename);
+        return null;
+    }
+
+    private PImage loadImage(InputStream input, String filename) {
+        try {
+            BufferedImage buffImg = ImageIO.read(input);
+            PImage img = new PImage(buffImg.getWidth(), buffImg.getHeight(), PConstants.ARGB);
+            buffImg.getRGB(0, 0, img.width, img.height, img.pixels, 0, img.width);
+            img.updatePixels();
+            return img;
+        } catch (Exception e) {
+            System.err.println("Failed to process image: " + filename);
+            return null;
+        }
     }
 
     /**
@@ -144,32 +199,71 @@ public class App extends PApplet {
 	@Override
     public void setup() {
         frameRate(FPS);
-        loadJSONObject(configPath);
-        obtainConfig(configPath);
-		loadLevel(layouts.get(currentLevelIndex));
-        smoothing(layoutScaled);
-        smoothing(layoutScaled);
-        putTree();
-        initializeTanks();
-        currentTank = tanks.get(currentTurnIndex);
-        //Load Images from resources
-        basicBackgroundImage = loadImage("src/main/resources/Tanks/basic.png");
-        desertBackgroundImage = loadImage("src/main/resources/Tanks/desert.png");
-        forestBackgroundImage = loadImage("src/main/resources/Tanks/forest.png");
-        hillsBackgroundImage = loadImage("src/main/resources/Tanks/hills.png");
-        snowBackgroundImage = loadImage("src/main/resources/Tanks/snow.png");
-        fuelImage = loadImage("src/main/resources/Tanks/fuel.png");
-        parachuteImage = loadImage("src/main/resources/Tanks/parachute.png");
-        tree1 = loadImage("src/main/resources/Tanks/tree1.png");
-        tree2 = loadImage("src/main/resources/Tanks/tree2.png");
-        windRight = loadImage("src/main/resources/Tanks/wind.png");
-        windLeft = loadImage("src/main/resources/Tanks/wind-1.png");
-        fuelImage.resize(imageResizer, imageResizer);
-        windLeft.resize(imageSize, imageSize);
-        windRight.resize(imageSize, imageSize);
-        parachuteImage.resize(CELLSIZE, CELLHEIGHT);
+
+        // Load Images from resources with error handling
+        basicBackgroundImage = loadGameResource("basic.png");
+        desertBackgroundImage = loadGameResource("desert.png");
+        forestBackgroundImage = loadGameResource("forest.png");
+        hillsBackgroundImage = loadGameResource("hills.png");
+        snowBackgroundImage = loadGameResource("snow.png");
+        fuelImage = loadGameResource("fuel.png");
+        parachuteImage = loadGameResource("parachute.png");
+        tree1 = loadGameResource("tree1.png");
+        tree2 = loadGameResource("tree2.png");
+        windRight = loadGameResource("wind.png");
+        windLeft = loadGameResource("wind-1.png");
+
+        // Only resize if images were loaded successfully
+        if (fuelImage != null) fuelImage.resize(imageResizer, imageResizer);
+        if (windLeft != null) windLeft.resize(imageSize, imageSize);
+        if (windRight != null) windRight.resize(imageSize, imageSize);
+        if (parachuteImage != null) parachuteImage.resize(CELLSIZE, CELLHEIGHT);
+
+        // Load game configuration
+        try {
+            loadJSONObject(configPath);
+            obtainConfig(configPath);
+            loadLevel(layouts.get(currentLevelIndex));
+            smoothing(layoutScaled);
+            smoothing(layoutScaled);
+            putTree();
+            initializeTanks();
+            currentTank = tanks.get(currentTurnIndex);
+        } catch (Exception e) {
+            System.err.println("Failed to load game configuration: " + e.getMessage());
+            exit(); // Exit if critical resources can't be loaded
+        }
     }
 
+    private String[] loadGameFile(String filename) {
+        try {
+            // First try: Load from classpath
+            InputStream resourceStream = getClass().getClassLoader().getResourceAsStream(filename);
+            if (resourceStream != null) {
+                return new BufferedReader(new InputStreamReader(resourceStream))
+                        .lines()
+                        .toArray(String[]::new);
+            }
+
+            // Second try: Load from application directory
+            String appPath = System.getProperty("user.dir");
+            File file = new File(appPath + "/resources/" + filename);
+            if (file.exists()) {
+                return loadStrings(file.getAbsolutePath());
+            }
+
+            // Third try: Load from relative path
+            if (new File(filename).exists()) {
+                return loadStrings(filename);
+            }
+
+            System.err.println("Could not load file: " + filename);
+            return new String[0];
+        } catch (Exception e) {
+            System.err.println("Error loading file " + filename + ": " + e.getMessage());
+            return new String[0];
+        }
+    }
     
     /**
      * Given a json file which contains information of the 
@@ -225,7 +319,7 @@ public class App extends PApplet {
      * @param layoutFile, the path to the txt layout file
      */
     public void loadLevel(String layoutFile) {
-        layout = loadStrings(layoutFile); // Retrieves the level.txt file into an array
+        layout = loadGameFile(layoutFile); // Retrieves the level.txt file into an array
 
         int width = 0;
         for (String line : layout) {
@@ -298,7 +392,7 @@ public class App extends PApplet {
      * Puts the element 'T' and the players into the scaled layout 
      */
     public void putTree() {
-        String layout[] = loadStrings(layouts.get(currentLevelIndex));
+        String layout[] = loadGameFile(layouts.get(currentLevelIndex));
         for (int x = 0; x < layout.length; x++) {
             for (int y = 0; y < layout[x].length(); y++) {
                 char ch = layout[x].charAt(y);
@@ -366,13 +460,27 @@ public class App extends PApplet {
      * Initializes the tanks to create new tank objects and add them to a list.
      */
     public void initializeTanks() {
+        // Store previous scores before clearing tanks
+        Map<Character, Integer> previousScores = new HashMap<>();
+        for (Tank tank : tanks) {
+            previousScores.put(tank.getName(), tank.getScore());
+        }
+
         tanks.clear();
+        tanksCopy.clear(); // Clear and rebuild tanksCopy too
+
         for (int x = 0; x < layoutScaled.length; x++) {
             for (int y = 0; y < layoutScaled[x].length; y++) {
                 char ch = layoutScaled[x][y];
                 if (ch != ' ' && players.containsKey(ch)) {
                     int[] currentColor = players.get(ch);
                     Tank object = new Tank(y, x - CELLSIZE, currentColor, ch);
+
+                    // Restore previous score if it exists
+                    if (previousScores.containsKey(ch)) {
+                        object.setScore(previousScores.get(ch));
+                    }
+
                     tanks.add(object);
                     tanksCopy.add(object);
                     if (!playerScores.containsKey(ch)) {
@@ -381,15 +489,14 @@ public class App extends PApplet {
                 }
             }
         }
-        
-        //Sort the tanks in order
+
+        // Sort the tanks in order
         Collections.sort(tanks, new Comparator<Tank>() {
             public int compare(Tank firstTank, Tank secondTank) {
                 int comparator = Character.compare(firstTank.getName(), secondTank.getName());
                 if (comparator == 0) {
                     return Integer.compare(firstTank.getName(), secondTank.getName());
-                }
-                else {
+                } else {
                     return comparator;
                 }
             }
@@ -399,8 +506,7 @@ public class App extends PApplet {
                 int comparator = Character.compare(firstTank.getName(), secondTank.getName());
                 if (comparator == 0) {
                     return Integer.compare(firstTank.getName(), secondTank.getName());
-                }
-                else {
+                } else {
                     return comparator;
                 }
             }
@@ -441,23 +547,40 @@ public class App extends PApplet {
     }
 
     public void nextTurn() {
-        // Remove dead tanks before changing turns
+        // Remember the score of dying tank
+        boolean currentTankDied = false;
+        if (currentTank.getTankHealth() <= 0 || currentTank.isOutOfBounds()) {
+            currentTank.setScore(0); // Reset score if tank kills itself
+            currentTankDied = true;
+        }
+
+        // Remove dead tanks
         Iterator<Tank> iterator = tanks.iterator();
         while (iterator.hasNext()) {
             Tank tank = iterator.next();
             if (tank.getTankHealth() <= 0 || tank.isOutOfBounds()) {
-                if (tank == currentTank) {
-                    currentTurnIndex = currentTurnIndex % (tanks.size() - 1); // Adjust index before removal
-                } else if (tank.getName() < currentTank.getName()) {
-                    currentTurnIndex--; // Decrement index if removed tank was before current
+                // Update score in tanksCopy before removal
+                for (Tank copyTank : tanksCopy) {
+                    if (copyTank.getName() == tank.getName()) {
+                        copyTank.setScore(tank.getScore());
+                        break;
+                    }
                 }
                 iterator.remove();
             }
         }
 
-        // Advance to next turn
+        // Move to next alive tank
         if (tanks.size() > 1) {
-            currentTurnIndex = (currentTurnIndex + 1) % tanks.size();
+            if (!currentTankDied) {
+                // Normal turn progression
+                currentTurnIndex = (currentTurnIndex + 1) % tanks.size();
+            } else {
+                // If current tank died, don't increment turn index
+                // This will effectively skip to the next tank in the list
+                // since the current tank was removed
+                currentTurnIndex = currentTurnIndex % tanks.size();
+            }
             currentTank = tanks.get(currentTurnIndex);
         }
     }
@@ -467,8 +590,17 @@ public class App extends PApplet {
      * @param background, The filename of the background
      */
     public void putBackground(String background) {
-        PImage backgroundImage = loadImage("src/main/resources/Tanks/" + background);
-        background(backgroundImage);
+        try {
+            PImage backgroundImage = loadGameResource(background);
+            if (backgroundImage != null) {
+                background(backgroundImage);
+            } else {
+                // Fallback to a solid color if the image can't be loaded
+                background(200);
+            }
+        } catch (Exception e) {
+            background(200);
+        }
     }
 
     /**
@@ -476,13 +608,14 @@ public class App extends PApplet {
      */
 	@Override
     public void keyPressed(KeyEvent event){
-        int key = event.getKeyCode();
-
-        if (tanks.size() == 1) {
+        // Ignore key presses during transitions, when game is over, or when projectile is active
+        if (isTransitioning || isGameOver || !projectiles.isEmpty()) {
             return;
         }
 
+        int key = event.getKeyCode();
         Tank currentTank = tanks.get(currentTurnIndex);
+        
         if (key == UP) {
             currentTank.turnTurretLeft((float) 0.05);
             //turret moves left +3 rad /s
@@ -540,7 +673,7 @@ public class App extends PApplet {
 
         // Health Bar
         fill(0);
-        float currentHealth = (float) currentTank.getTankHealth();
+        float currentHealth = Math.max(0, (float) currentTank.getTankHealth());
         text("Health:", 320, 26);
 
         float maxHealth = 100;
@@ -602,17 +735,18 @@ public class App extends PApplet {
         textSize(16);
         int startX = 700;
         int startY = 70;
-        
-        pushStyle(); //Save all current things that have been drawn
 
-        //Scores
+        pushStyle(); // Save all current things that have been drawn
+
+        // Scores
         noFill();
         stroke(0); // Black Border
         strokeWeight(3); // Thickness
         rect(startX, startY, 150, 20);
         fill(0);
         text("Scores:", startX + 8, startY + 16);
-        //Player Scores Border
+
+        // Player Scores Border
         noFill();
         stroke(0); // Black Border
         strokeWeight(3); // Thickness
@@ -620,27 +754,32 @@ public class App extends PApplet {
 
         int changeY = 0;
         Set<Character> displayedPlayers = new HashSet<>();
+
         for (Tank currentTank : tanksCopy) {
             if (!displayedPlayers.contains(currentTank.getName())) {
                 displayedPlayers.add(currentTank.getName());
 
+                // Find matching tank in active tanks list to get current score
+                int currentScore = 0;
+                for (Tank activeTank : tanks) {
+                    if (activeTank.getName() == currentTank.getName()) {
+                        currentScore = activeTank.getScore();
+                        break;
+                    }
+                }
+
                 Character currentPlayerName = currentTank.getName();
                 String currentPlayerNameString = Character.toString(currentPlayerName);
                 String currentPlayer = "Player " + currentPlayerNameString;
-                
+
                 fill(currentTank.color[0], currentTank.color[1], currentTank.color[2]);
                 text(currentPlayer, startX + 5, startY + 40 + changeY);
-                
-                playerScores.put(currentTank.getName(), currentTank.getScore());
-                int currentScore = playerScores.get(currentTank.getName());
-                
-                fill(currentTank.color[0], currentTank.color[1], currentTank.color[2]);
                 text(currentScore, startX + 115, startY + 40 + changeY);
                 changeY += 25;
             }
         }
 
-        popStyle(); //Restore all things that have been drawn
+        popStyle(); // Restore all things that have been drawn
     }
 
     /**
@@ -653,9 +792,42 @@ public class App extends PApplet {
             textAlign(CENTER);
             textSize(32);
 
-            Tank winner = Collections.max(tanks, Comparator.comparingInt(Tank::getScore));
-            String message = "Player " + winner.getName() + " wins";
-            text(message, WIDTH/2, HEIGHT/2 - 100);
+            // Sort tanks by score
+            java.util.List<Tank> sortedTanks = new ArrayList<>(tanksCopy);
+            Collections.sort(sortedTanks, (t1, t2) -> Integer.compare(t2.getScore(), t1.getScore()));
+
+            // Check for tie (if highest score appears multiple times)
+            int highestScore = sortedTanks.get(0).getScore();
+            java.util.List<Tank> winners = sortedTanks.stream()
+                .filter(t -> t.getScore() == highestScore)
+                .collect(java.util.stream.Collectors.toList());
+
+            // Display winner(s)
+            if (winners.size() == 1) {
+                String message = "Player " + winners.get(0).getName() + " wins!";
+                text(message, WIDTH/2, HEIGHT/2 - 100);
+            } else {
+                String tieMessage = "Tie between Players ";
+                for (int i = 0; i < winners.size(); i++) {
+                    tieMessage += winners.get(i).getName();
+                    if (i < winners.size() - 1) {
+                        tieMessage += " & ";
+                    }
+                }
+                text(tieMessage, WIDTH/2, HEIGHT/2 - 100);
+            }
+
+            // Display final scoreboard
+            textSize(24);
+            text("Final Scores:", WIDTH/2, HEIGHT/2 - 40);
+            
+            int yOffset = 0;
+            for (Tank tank : sortedTanks) {
+                fill(tank.getColor()[0], tank.getColor()[1], tank.getColor()[2]);
+                String scoreText = String.format("Player %c: %d", tank.getName(), tank.getScore());
+                text(scoreText, WIDTH/2, HEIGHT/2 + yOffset);
+                yOffset += 30;
+            }
         }
     }
 
@@ -679,27 +851,40 @@ public class App extends PApplet {
      */
     public void changeLevel() {
         if (isLevelOver) {
-            if (tanks.size() <= 1) {
-                delay(2000);
-                currentLevelIndex++;
-                if (currentLevelIndex < layouts.size()) {
-                    loadLevel(layouts.get(currentLevelIndex));
-                    smoothing(layoutScaled);
-                    smoothing(layoutScaled);
-                    putTree();
-                    initializeTanks();
-                    for (Tank tank : tanks) {
-                        tank.resetStats();
-                    }
-                    currentTurnIndex = 0;
-                    currentTank = tanks.get(currentTurnIndex);
-                    isLevelOver = false;
+            if (!isTransitioning) {
+                // Start transition only if there are no active projectiles
+                if (projectiles.isEmpty()) {
+                    isTransitioning = true;
+                    transitionTimer = TRANSITION_DELAY;
                 }
-                else {
-                    isGameOver = true;
+            } else {
+                // Count down the transition timer
+                if (transitionTimer > 0) {
+                    transitionTimer--;
+                    return;
+                }
+
+                // Proceed with level change after delay
+                if (tanks.size() <= 1) {
+                    currentLevelIndex++;
+                    if (currentLevelIndex < layouts.size()) {
+                        loadLevel(layouts.get(currentLevelIndex));
+                        smoothing(layoutScaled);
+                        smoothing(layoutScaled);
+                        putTree();
+                        initializeTanks();
+                        for (Tank tank : tanks) {
+                            tank.resetStats();
+                        }
+                        currentTurnIndex = 0;
+                        currentTank = tanks.get(currentTurnIndex);
+                        isLevelOver = false;
+                        isTransitioning = false;
+                    } else {
+                        isGameOver = true;
+                    }
                 }
             }
-
         }
     }
 

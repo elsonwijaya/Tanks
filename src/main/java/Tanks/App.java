@@ -3,6 +3,7 @@ package Tanks;
 import org.checkerframework.checker.units.qual.A;
 import processing.core.PApplet;
 import processing.core.PImage;
+import processing.core.PConstants;
 import processing.data.JSONArray;
 import processing.data.JSONObject;
 import processing.event.KeyEvent;
@@ -11,6 +12,7 @@ import processing.event.MouseEvent;
 import java.awt.*;
 import java.awt.geom.AffineTransform;
 import java.awt.image.BufferedImage;
+import javax.imageio.ImageIO;
 
 import java.io.*;
 import java.util.*;
@@ -133,6 +135,56 @@ public class App extends PApplet {
         instance = this;
     }
 
+    private PImage loadGameResource(String filename) {
+        // First try: Load from the classpath using resource stream
+        try {
+            InputStream resourceStream = getClass().getClassLoader().getResourceAsStream("Tanks/" + filename);
+            if (resourceStream != null) {
+                byte[] bytes = resourceStream.readAllBytes();
+                return loadImage(new ByteArrayInputStream(bytes), filename);
+            }
+        } catch (Exception e) {
+            System.err.println("Failed to load from classpath: " + filename);
+        }
+
+        // Second try: Load from the application directory
+        try {
+            String appPath = System.getProperty("user.dir");
+            String resourcePath = appPath + "/resources/Tanks/" + filename;
+            File resourceFile = new File(resourcePath);
+            if (resourceFile.exists()) {
+                return loadImage(resourcePath);
+            }
+        } catch (Exception e) {
+            System.err.println("Failed to load from app directory: " + filename);
+        }
+
+        // Third try: Load from relative path
+        try {
+            if (new File("resources/Tanks/" + filename).exists()) {
+                return loadImage("resources/Tanks/" + filename);
+            }
+        } catch (Exception e) {
+            System.err.println("Failed to load from relative path: " + filename);
+        }
+
+        System.err.println("Could not load resource: " + filename);
+        return null;
+    }
+
+    private PImage loadImage(InputStream input, String filename) {
+        try {
+            BufferedImage buffImg = ImageIO.read(input);
+            PImage img = new PImage(buffImg.getWidth(), buffImg.getHeight(), PConstants.ARGB);
+            buffImg.getRGB(0, 0, img.width, img.height, img.pixels, 0, img.width);
+            img.updatePixels();
+            return img;
+        } catch (Exception e) {
+            System.err.println("Failed to process image: " + filename);
+            return null;
+        }
+    }
+
     /**
      * Initialise the setting of the window size.
      */
@@ -147,32 +199,71 @@ public class App extends PApplet {
 	@Override
     public void setup() {
         frameRate(FPS);
-        loadJSONObject(configPath);
-        obtainConfig(configPath);
-		loadLevel(layouts.get(currentLevelIndex));
-        smoothing(layoutScaled);
-        smoothing(layoutScaled);
-        putTree();
-        initializeTanks();
-        currentTank = tanks.get(currentTurnIndex);
-        //Load Images from resources
-        basicBackgroundImage = loadImage("src/main/resources/Tanks/basic.png");
-        desertBackgroundImage = loadImage("src/main/resources/Tanks/desert.png");
-        forestBackgroundImage = loadImage("src/main/resources/Tanks/forest.png");
-        hillsBackgroundImage = loadImage("src/main/resources/Tanks/hills.png");
-        snowBackgroundImage = loadImage("src/main/resources/Tanks/snow.png");
-        fuelImage = loadImage("src/main/resources/Tanks/fuel.png");
-        parachuteImage = loadImage("src/main/resources/Tanks/parachute.png");
-        tree1 = loadImage("src/main/resources/Tanks/tree1.png");
-        tree2 = loadImage("src/main/resources/Tanks/tree2.png");
-        windRight = loadImage("src/main/resources/Tanks/wind.png");
-        windLeft = loadImage("src/main/resources/Tanks/wind-1.png");
-        fuelImage.resize(imageResizer, imageResizer);
-        windLeft.resize(imageSize, imageSize);
-        windRight.resize(imageSize, imageSize);
-        parachuteImage.resize(CELLSIZE, CELLHEIGHT);
+
+        // Load Images from resources with error handling
+        basicBackgroundImage = loadGameResource("basic.png");
+        desertBackgroundImage = loadGameResource("desert.png");
+        forestBackgroundImage = loadGameResource("forest.png");
+        hillsBackgroundImage = loadGameResource("hills.png");
+        snowBackgroundImage = loadGameResource("snow.png");
+        fuelImage = loadGameResource("fuel.png");
+        parachuteImage = loadGameResource("parachute.png");
+        tree1 = loadGameResource("tree1.png");
+        tree2 = loadGameResource("tree2.png");
+        windRight = loadGameResource("wind.png");
+        windLeft = loadGameResource("wind-1.png");
+
+        // Only resize if images were loaded successfully
+        if (fuelImage != null) fuelImage.resize(imageResizer, imageResizer);
+        if (windLeft != null) windLeft.resize(imageSize, imageSize);
+        if (windRight != null) windRight.resize(imageSize, imageSize);
+        if (parachuteImage != null) parachuteImage.resize(CELLSIZE, CELLHEIGHT);
+
+        // Load game configuration
+        try {
+            loadJSONObject(configPath);
+            obtainConfig(configPath);
+            loadLevel(layouts.get(currentLevelIndex));
+            smoothing(layoutScaled);
+            smoothing(layoutScaled);
+            putTree();
+            initializeTanks();
+            currentTank = tanks.get(currentTurnIndex);
+        } catch (Exception e) {
+            System.err.println("Failed to load game configuration: " + e.getMessage());
+            exit(); // Exit if critical resources can't be loaded
+        }
     }
 
+    private String[] loadGameFile(String filename) {
+        try {
+            // First try: Load from classpath
+            InputStream resourceStream = getClass().getClassLoader().getResourceAsStream(filename);
+            if (resourceStream != null) {
+                return new BufferedReader(new InputStreamReader(resourceStream))
+                        .lines()
+                        .toArray(String[]::new);
+            }
+
+            // Second try: Load from application directory
+            String appPath = System.getProperty("user.dir");
+            File file = new File(appPath + "/resources/" + filename);
+            if (file.exists()) {
+                return loadStrings(file.getAbsolutePath());
+            }
+
+            // Third try: Load from relative path
+            if (new File(filename).exists()) {
+                return loadStrings(filename);
+            }
+
+            System.err.println("Could not load file: " + filename);
+            return new String[0];
+        } catch (Exception e) {
+            System.err.println("Error loading file " + filename + ": " + e.getMessage());
+            return new String[0];
+        }
+    }
     
     /**
      * Given a json file which contains information of the 
@@ -228,7 +319,7 @@ public class App extends PApplet {
      * @param layoutFile, the path to the txt layout file
      */
     public void loadLevel(String layoutFile) {
-        layout = loadStrings(layoutFile); // Retrieves the level.txt file into an array
+        layout = loadGameFile(layoutFile); // Retrieves the level.txt file into an array
 
         int width = 0;
         for (String line : layout) {
@@ -301,7 +392,7 @@ public class App extends PApplet {
      * Puts the element 'T' and the players into the scaled layout 
      */
     public void putTree() {
-        String layout[] = loadStrings(layouts.get(currentLevelIndex));
+        String layout[] = loadGameFile(layouts.get(currentLevelIndex));
         for (int x = 0; x < layout.length; x++) {
             for (int y = 0; y < layout[x].length(); y++) {
                 char ch = layout[x].charAt(y);
@@ -499,8 +590,17 @@ public class App extends PApplet {
      * @param background, The filename of the background
      */
     public void putBackground(String background) {
-        PImage backgroundImage = loadImage("src/main/resources/Tanks/" + background);
-        background(backgroundImage);
+        try {
+            PImage backgroundImage = loadGameResource(background);
+            if (backgroundImage != null) {
+                background(backgroundImage);
+            } else {
+                // Fallback to a solid color if the image can't be loaded
+                background(200);
+            }
+        } catch (Exception e) {
+            background(200);
+        }
     }
 
     /**

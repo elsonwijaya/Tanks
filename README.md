@@ -1,6 +1,6 @@
 # Tanks Artillery Game
 
-## Overview
+## About the Game
 Tanks is a turn-based artillery game inspired by classics like Worms. Players control tanks on destructible terrain, taking turns to move, aim, and fire projectiles at opponents. The last tank standing wins the round, and scores are tracked across multiple levels.
 
 ## Features
